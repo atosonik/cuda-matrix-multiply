@@ -116,17 +116,24 @@ int main(int argc, char** argv) {
     dim3 block(TILE, TILE);
     dim3 grid((N + TILE - 1) / TILE, (N + TILE - 1) / TILE);
 
+    matmul_cpu(hA, hB, hRef, N);
+
+    // Verify the naive kernel: run it, copy back, and check before the
+    // tiled kernel overwrites dC.
     matmul_naive<<<grid, block>>>(dA, dB, dC, N);
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaDeviceSynchronize());
+    CUDA_CHECK(cudaMemcpy(hC, dC, bytes, cudaMemcpyDeviceToHost));
+    bool naive_ok = verify(hRef, hC, N);
 
+    // Verify the tiled kernel against the same reference.
     matmul_tiled<<<grid, block>>>(dA, dB, dC, N);
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaDeviceSynchronize());
     CUDA_CHECK(cudaMemcpy(hC, dC, bytes, cudaMemcpyDeviceToHost));
+    bool tiled_ok = verify(hRef, hC, N);
 
-    matmul_cpu(hA, hB, hRef, N);
-    printf("Verification: %s\n", verify(hRef, hC, N) ? "PASSED" : "FAILED");
+    printf("Verification: %s\n", (naive_ok && tiled_ok) ? "PASSED" : "FAILED");
 
     cudaFree(dA);
     cudaFree(dB);
